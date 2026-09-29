@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  googleId      String   @unique @map("google_id")
+  email         String   @unique
+  name          String
+  avatar        String?
+  slackToken    String?  @map("slack_token")
+  slackWebhook  String?  @map("slack_webhook")
+  slackChannel  String?  @map("slack_channel")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  emails        Email[]
+
+  @@map("users")
+}
+
+model Email {
+  id              String      @id @default(uuid())
+  userId          String      @map("user_id")
+  jobId           String?     @unique @map("job_id")
+  idempotencyKey  String      @unique @map("idempotency_key")
+  fromEmail       String      @map("from_email")
+  toEmail         String      @map("to_email")
+  subject         String
+  body            String
+  status          EmailStatus @default(SCHEDULED)
+  scheduledAt     DateTime    @map("scheduled_at")
+  sentAt          DateTime?   @map("sent_at")
+  failedAt        DateTime?   @map("failed_at")
+  failureReason   String?     @map("failure_reason")
+  etherealUrl     String?     @map("ethereal_url")
+  batchId         String?     @map("batch_id")
+  senderLabel     String?     @map("sender_label")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  user            User        @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([batchId])
+  @@index([userId, status])
+  @@map("emails")
+}
+
+enum EmailStatus {
+  SCHEDULED
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  RATE_LIMITED
+}

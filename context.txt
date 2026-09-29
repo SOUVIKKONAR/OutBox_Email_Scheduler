@@ -1,0 +1,487 @@
+================================================================================
+  OUTBOX EMAIL SCHEDULER — FULL PROJECT CONTEXT
+  Last Updated: 2026-09-30
+  Purpose: Feed this file to any AI assistant to get full project understanding
+================================================================================
+
+## 1. WHAT IS THIS PROJECT?
+
+A production-grade full-stack email job scheduler built for the ReachInbox (Outbox Labs)
+Software Development Intern Hiring Assignment.
+
+It accepts email scheduling requests via REST APIs, queues them using BullMQ delayed
+jobs (NOT cron), sends them via fake SMTP (Ethereal Email), and exposes a React
+dashboard for managing everything.
+
+## 2. ASSIGNMENT REQUIREMENTS (SUMMARY)
+
+BACKEND (Express.js + TypeScript):
+  - Accept email scheduling via API
+  - Store in PostgreSQL (Prisma ORM)
+  - Schedule via BullMQ delayed jobs — NO cron jobs of any kind
+  - Send via Ethereal Email (fake SMTP)
+  - Emails searchable via Elasticsearch
+  - Live BullMQ dashboard (Bull Board)
+  - Persist state: server restart = future emails still send correctly, no duplicates
+  - Worker concurrency (configurable)
+  - Delay between each email send (min 2s, configurable)
+  - Rate limiting: global + per-sender hourly limits, Redis-backed, configurable
+  - When rate limit hit: reschedule jobs to next hour (don't drop), notify via Slack
+  - Slack OAuth: real OAuth flow, real webhook message on rate limit, not a log line
+  - Idempotency: same email queue must NOT be sent more than once
+
+FRONTEND (React + TypeScript + Tailwind CSS):
+  - Google OAuth login (real, not mock)
+  - Dashboard: user info + logout in header
+  - Tabs: Scheduled Emails, Sent Emails
+  - Compose New Email: subject, body, CSV upload, start time, delay, hourly limit
+  - Tables with loading states, empty states
+  - Clean folder structure, reusable components, proper TypeScript types
+
+## 3. TECH STACK
+
+Backend:
+  - Language: TypeScript (strict mode)
+  - Framework: Express.js
+  - ORM: Prisma (PostgreSQL)
+  - Queue: BullMQ (Redis-backed)
+  - SMTP: Nodemailer → Ethereal Email
+  - Search: Elasticsearch 8.12
+  - Auth: Passport.js (Google OAuth) + JWT
+  - Slack: Real OAuth + incoming webhooks
+  - Queue Dashboard: @bull-board/express
+  - Rate Limiting: Custom Redis INCR + TTL counters
+
+Frontend:
+  - Framework: React 19 (Vite)
+  - Language: TypeScript
+  - CSS: Tailwind CSS v4
+  - HTTP: Axios with JWT interceptor
+  - Router: React Router v7
+  - Notifications: react-hot-toast
+  - Icons: lucide-react
+  - Dates: date-fns
+
+Infrastructure:
+  - Docker Compose: Redis 7, PostgreSQL 16, Elasticsearch 8.12
+  - All configurable via environment variables
+
+## 4. MONOREPO FILE STRUCTURE
+
+OutBox/
+├── docker-compose.yml              # Infrastructure containers
+├── package.json                    # Root workspace scripts
+├── .env.example                    # All env vars template
+├── README.md                       # Full documentation
+├── demo.md                         # Demo video recording guide
+├── CONTEXT.md                      # Shorter context doc
+├── context.txt                     # THIS FILE — full AI context
+│
+├── backend/
+│   ├── package.json                # Dependencies: bullmq, prisma, passport, etc
+│   ├── tsconfig.json               # TypeScript strict config
+│   ├── .env                        # Actual env vars (gitignored)
+│   ├── prisma/
+│   │   └── schema.prisma           # Database models (User, Email)
+│   └── src/
+│       ├── index.ts                # EXPRESS ENTRY POINT
+│       │                             - Sets up middleware (CORS, JSON, cookies, Passport)
+│       │                             - Mounts Bull Board at /admin/queues
+│       │                             - Mounts API routes (/api/auth, /api/emails, etc)
+│       │                             - Initializes DB, Ethereal, ES, Worker
+│       │                             - Calls requeuePendingEmails() on startup (restart recovery)
+│       │
+│       ├── config/
+│       │   ├── env.ts              # Typed env var access with defaults
+│       │   ├── db.ts               # Prisma client singleton + connect/disconnect
+│       │   ├── redis.ts            # IORedis connection + factory for BullMQ
+│       │   │                         maxRetriesPerRequest: null (required by BullMQ)
+│       │   ├── elasticsearch.ts    # ES client, index creation, indexEmail(),
+│       │   │                         updateEmailIndex(), searchEmails()
+│       │   └── ethereal.ts         # Nodemailer transport, auto-creates Ethereal account
+│       │                             if no creds in env, sendEmail() helper
+│       │
+│       ├── middleware/
+│       │   └── auth.ts             # JWT auth middleware
+│       │                             Checks Authorization header (Bearer) or cookie
+│       │                             Sets req.user with {id, email, name, avatar}
+│       │
+│       ├── types/
+│       │   └── index.ts            # AuthUser, AuthRequest, ScheduleEmailRequest,
+│       │                             BulkScheduleEmailRequest, EmailJobData, PaginationQuery
+│       │
+│       ├── routes/
+│       │   ├── auth.ts             # GOOGLE OAUTH ROUTES
+│       │   │                         GET  /api/auth/google          → Passport Google strategy
+│       │   │                         GET  /api/auth/google/callback → JWT token, redirect to frontend
+│       │   │                         GET  /api/auth/me              → Current user (auth required)
+│       │   │                         POST /api/auth/logout          → Clear cookie
+│       │   │
+│       │   ├── email.ts            # EMAIL API ROUTES (all auth required)
+│       │   │                         POST /api/emails/schedule      → Single email scheduling
+│       │   │                         POST /api/emails/schedule-bulk → Bulk + CSV upload (multer)
+│       │   │                         GET  /api/emails/scheduled     → Paginated scheduled emails
+│       │   │                         GET  /api/emails/sent          → Paginated sent emails
+│       │   │                         GET  /api/emails/all           → All emails with optional filter
+│       │   │                         GET  /api/emails/stats         → Queue stats (waiting/active/etc)
+│       │   │                         GET  /api/emails/rate-limit/:sender → Rate limit info
+│       │   │
+│       │   ├── slack.ts            # SLACK OAUTH ROUTES
+│       │   │                         GET  /api/slack/connect        → Redirect to Slack OAuth
+│       │   │                         GET  /api/slack/callback       → Exchange code, store token
+│       │   │                         GET  /api/slack/status         → Check if Slack is connected
+│       │   │                         POST /api/slack/disconnect     → Remove Slack tokens
+│       │   │
+│       │   └── search.ts           # ELASTICSEARCH SEARCH
+│       │                             GET  /api/search?q=...&status=... → Full-text email search
+│       │
+│       ├── queues/
+│       │   ├── emailQueue.ts       # BULLMQ QUEUE DEFINITION
+│       │   │                         Queue name: "email-send"
+│       │   │                         Default: 3 retries, exponential backoff
+│       │   │                         addEmailJob(data, delayMs) → jobId = idempotencyKey
+│       │   │                         rescheduleEmailJob(data, delayMs) → remove + re-add
+│       │   │                         getQueueStats() → waiting/active/completed/failed/delayed
+│       │   │
+│       │   └── emailWorker.ts      # BULLMQ WORKER (THE CORE ENGINE)
+│       │                             Concurrency: env.WORKER_CONCURRENCY (default 5)
+│       │                             BullMQ limiter: max per hour
+│       │                             Processing flow per job:
+│       │                               1. Idempotency check (skip if already SENT in DB)
+│       │                               2. Sender rate limit check (Redis counter)
+│       │                               3. Global rate limit check (Redis counter)
+│       │                               4. If rate limited → reschedule to next hour + Slack notify
+│       │                               5. Delay (DELAY_BETWEEN_EMAILS_MS)
+│       │                               6. Increment Redis counters
+│       │                               7. Send via Ethereal SMTP
+│       │                               8. Update DB → SENT + etherealUrl
+│       │                               9. Update Elasticsearch index
+│       │
+│       └── services/
+│           ├── emailService.ts     # EMAIL BUSINESS LOGIC
+│           │                         scheduleEmail() → DB insert + BullMQ delayed job + ES index
+│           │                         scheduleBulkEmails() → Staggered scheduling for each recipient
+│           │                           recipient[i].scheduledAt = base + (i * delayBetweenEmailsMs)
+│           │                         getUserEmails() → Paginated query by userId + status
+│           │                         requeuePendingEmails() → ON RESTART: query DB for future
+│           │                           SCHEDULED/RATE_LIMITED emails, re-add to BullMQ queue
+│           │                           BullMQ jobId idempotency prevents duplicates
+│           │
+│           ├── rateLimiter.ts      # REDIS-BACKED RATE LIMITING
+│           │                         Key format: ratelimit:sender:{email}:{hourWindow}
+│           │                                     ratelimit:global:{hourWindow}
+│           │                         hourWindow = Math.floor(Date.now() / 3600000)
+│           │                         Uses Redis INCR (atomic) + EXPIRE (1hr TTL)
+│           │                         checkSenderRateLimit() → { allowed, currentCount, limit, nextWindowMs }
+│           │                         checkGlobalRateLimit() → same shape
+│           │                         incrementSenderCount() / incrementGlobalCount()
+│           │
+│           └── slackService.ts     # SLACK NOTIFICATIONS
+│                                     sendSlackNotification(userId, message)
+│                                       → Checks DB for user's slackWebhook or slackToken
+│                                       → If not connected, silently skip (no crash)
+│                                       → Posts to webhook URL or uses chat.postMessage API
+│                                     notifyRateLimitHit() → Formatted alert message
+│
+└── frontend/
+    ├── package.json
+    ├── vite.config.ts              # Tailwind v4 plugin + proxy /api → localhost:3001
+    ├── index.html                  # Inter font, meta tags
+    └── src/
+        ├── main.tsx                # React root
+        ├── App.tsx                 # BrowserRouter + Routes:
+        │                             /login          → LoginPage (or redirect if authed)
+        │                             /auth/callback  → AuthCallback (extract token from URL)
+        │                             /dashboard      → Dashboard (ProtectedRoute)
+        │                             /*              → Redirect based on auth state
+        │                             + Toaster (react-hot-toast) with dark theme
+        │
+        ├── index.css               # DESIGN SYSTEM (dark theme)
+        │                             CSS variables: --color-bg-*, --color-text-*, --color-accent, etc
+        │                             Base styles, scrollbar, animations (fadeIn, slideUp, scaleIn, shimmer)
+        │                             .glass-card, .btn (primary/secondary/ghost/danger/success)
+        │                             .input, .data-table, .badge-* (status colors)
+        │                             .modal-overlay/content, .tab-list/tab, .spinner
+        │                             .empty-state, .upload-zone, .skeleton (loading shimmer)
+        │
+        ├── api/
+        │   └── client.ts           # Axios instance, baseURL: /api, withCredentials
+        │                             Request interceptor: adds Bearer token from localStorage
+        │                             Response interceptor: 401 → clear token, redirect /login
+        │
+        ├── hooks/
+        │   └── useAuth.ts          # Auth state hook
+        │                             State: user (from localStorage), loading
+        │                             checkAuth() → GET /api/auth/me
+        │                             login() → redirect to /api/auth/google
+        │                             logout() → POST /api/auth/logout + clear localStorage
+        │
+        ├── types/
+        │   └── index.ts            # User, Email, EmailStatus, PaginatedResponse<T>,
+        │                             QueueStats, SlackStatus, ScheduleEmailPayload,
+        │                             BulkSchedulePayload, SearchResult
+        │
+        ├── components/
+        │   ├── layout/
+        │   │   └── Header.tsx      # Logo (Mail icon + gradient), Slack connect/disconnect,
+        │   │                         notification bell, user avatar+name+email, logout button
+        │   │
+        │   ├── ComposeEmail.tsx     # MODAL for scheduling emails
+        │   │                         Fields: fromEmail, senderLabel, recipients (textarea),
+        │   │                         CSV/TXT file upload (drag-drop + click), subject, body (HTML)
+        │   │                         Settings: start time (datetime-local), delay between (ms),
+        │   │                         hourly limit
+        │   │                         Submit: single → POST /api/emails/schedule
+        │   │                                 bulk → POST /api/emails/schedule-bulk (FormData)
+        │   │                         File parsing: regex for email addresses, deduplication
+        │   │
+        │   └── EmailTable.tsx      # REUSABLE TABLE component
+        │                             Props: emails[], loading, type ('scheduled'|'sent')
+        │                             StatusBadge: colored dot + text (SCHEDULED=blue, SENT=green, etc)
+        │                             SkeletonRow: shimmer loading animation
+        │                             Empty state: icon + message based on type
+        │                             Columns: Recipient, Subject, Time, From, Status, Preview
+        │                             Preview: link to Ethereal URL if available
+        │                             Staggered row entrance animation
+        │
+        └── pages/
+            ├── Login.tsx           # Full-page login
+            │                         Radial gradient background with glow effects
+            │                         Animated Mail icon with pulse-glow
+            │                         Gradient text "OutBox"
+            │                         Google Sign In button (white, Google logo SVG)
+            │                         Hover: translateY(-2px) lift effect
+            │
+            ├── Dashboard.tsx       # MAIN DASHBOARD
+            │                         StatCard row: Delayed, Waiting, Active, Completed, Failed
+            │                         Tab bar: Scheduled (count) | Sent (count)
+            │                         Search input (triggers ES search on Enter)
+            │                         Refresh button, Compose Email button
+            │                         EmailTable in glass-card
+            │                         Pagination (Previous/Next)
+            │                         Auto-refresh: setInterval every 10 seconds
+            │                         Checks URL params for Slack callback status
+            │                         ComposeEmail modal toggle
+            │
+            └── Callback.tsx        # OAuth callback handler
+                                      Extracts ?token= from URL
+                                      Stores in localStorage
+                                      Redirects to /dashboard
+
+## 5. DATABASE SCHEMA (Prisma)
+
+User:
+  id            String   (UUID, PK)
+  googleId      String   (unique, from Google)
+  email         String   (unique)
+  name          String
+  avatar        String?
+  slackToken    String?  (Slack bot token)
+  slackWebhook  String?  (Slack incoming webhook URL)
+  slackChannel  String?  (Slack channel ID)
+  createdAt     DateTime
+  updatedAt     DateTime
+  → has many Email
+
+Email:
+  id              String      (UUID, PK)
+  userId          String      (FK → User)
+  jobId           String?     (unique, BullMQ job ID)
+  idempotencyKey  String      (unique, prevents duplicates)
+  fromEmail       String
+  toEmail         String
+  subject         String
+  body            String
+  status          EmailStatus (enum: SCHEDULED|QUEUED|SENDING|SENT|FAILED|RATE_LIMITED)
+  scheduledAt     DateTime
+  sentAt          DateTime?
+  failedAt        DateTime?
+  failureReason   String?
+  etherealUrl     String?     (Ethereal preview link)
+  batchId         String?     (groups bulk emails)
+  senderLabel     String?
+  createdAt       DateTime
+  updatedAt       DateTime
+
+Indexes: status, scheduledAt, batchId, (userId + status)
+
+## 6. CORE WORKFLOWS
+
+### A) Email Scheduling Flow
+  User → POST /api/emails/schedule { fromEmail, toEmail, subject, body, scheduledAt }
+    → Validate input
+    → Generate idempotencyKey: {userId}:{fromEmail}:{toEmail}:{timestamp}:{random8}
+    → prisma.email.create(status: SCHEDULED)
+    → Calculate delay: scheduledAt.getTime() - Date.now()
+    → emailQueue.add('send-email', jobData, { delay, jobId: idempotencyKey })
+    → Update email record with jobId
+    → Index in Elasticsearch
+    → Return { emailId, jobId }
+
+### B) Bulk Scheduling Flow
+  User → POST /api/emails/schedule-bulk (FormData with CSV file)
+    → Parse CSV/text for email addresses (regex)
+    → Deduplicate recipients
+    → Generate batchId (UUID)
+    → For each recipient[i]:
+        scheduledAt = baseTime + (i * delayBetweenEmailsMs)
+        → scheduleEmail() with staggered time
+    → Return { batchId, emailCount, emailIds }
+
+### C) Worker Processing Flow (per job)
+  BullMQ fires delayed job →
+    1. Load email from DB by idempotencyKey
+    2. If status === SENT → skip (idempotent)
+    3. checkSenderRateLimit(fromEmail) via Redis
+    4. checkGlobalRateLimit() via Redis
+    5. If rate limited:
+       → Update status to RATE_LIMITED
+       → notifyRateLimitHit() → Slack webhook (if connected)
+       → rescheduleEmailJob(data, nextWindowMs + 1000)
+       → Update scheduledAt in DB
+       → Return (don't throw, job completes successfully)
+    6. If allowed:
+       → Update status to SENDING
+       → await delay(DELAY_BETWEEN_EMAILS_MS) — throttle
+       → incrementSenderCount() + incrementGlobalCount() (Redis INCR)
+       → sendEmail() via Ethereal SMTP
+       → Update status to SENT, set sentAt, etherealUrl
+       → updateEmailIndex() in Elasticsearch
+    7. On error:
+       → Update status to FAILED, set failedAt, failureReason
+       → Throw error (BullMQ retries up to 3 times with exponential backoff)
+
+### D) Restart Recovery Flow
+  Server starts → requeuePendingEmails():
+    → Query DB: WHERE status IN (SCHEDULED, RATE_LIMITED) AND scheduledAt >= NOW()
+    → For each email:
+        delay = scheduledAt - Date.now()
+        addEmailJob(data, delay)  ← jobId = idempotencyKey
+    → BullMQ ignores if job already exists (same jobId = no-op)
+    → Log: "Re-queued X/Y pending emails from DB"
+    RESULT: No lost emails, no duplicates, correct timing preserved
+
+### E) Rate Limiting Logic
+  Redis keys per hour window:
+    ratelimit:sender:{email}:{hourWindow}  → per-sender count
+    ratelimit:global:{hourWindow}          → global count
+  hourWindow = Math.floor(Date.now() / 3600000) — changes every clock hour
+  INCR is atomic — safe across concurrent workers
+  TTL = 3600s — auto-cleanup
+  When limit hit:
+    → Job rescheduled to: nextWindowMs = ((hourWindow+1) * 3600000) - Date.now()
+    → Slack notification sent
+    → Job NOT dropped or permanently failed
+
+### F) Slack Integration Flow
+  Connect:
+    User clicks "Connect Slack" → GET /api/slack/connect
+    → Redirect to Slack OAuth (scopes: incoming-webhook, chat:write)
+    → User authorizes → Slack redirects to /api/slack/callback
+    → Exchange code for token → Store slackToken + slackWebhook in User record
+    → Redirect to frontend /dashboard?slack=connected
+  Notification:
+    Rate limit hit → notifyRateLimitHit() → sendSlackNotification()
+    → Check user's slackWebhook in DB
+    → If null → silently skip (no crash)
+    → If present → POST to webhook URL with formatted Block Kit message
+  Disconnect:
+    POST /api/slack/disconnect → Set slackToken/slackWebhook/slackChannel to null
+
+## 7. ENVIRONMENT VARIABLES
+
+PORT=3001                           # Backend port
+NODE_ENV=development
+FRONTEND_URL=http://localhost:5173  # For CORS + OAuth redirects
+DATABASE_URL=postgresql://outbox:outbox_secret@localhost:5432/outbox_db
+REDIS_HOST=localhost
+REDIS_PORT=6379
+ELASTICSEARCH_URL=http://localhost:9200
+JWT_SECRET=<random-secret>          # REQUIRED: for signing JWTs
+GOOGLE_CLIENT_ID=<from-gcloud>      # REQUIRED: Google Cloud Console
+GOOGLE_CLIENT_SECRET=<from-gcloud>  # REQUIRED: Google Cloud Console
+GOOGLE_CALLBACK_URL=http://localhost:3001/api/auth/google/callback
+SLACK_CLIENT_ID=<from-slack-app>    # Optional: Slack API
+SLACK_CLIENT_SECRET=<from-slack-app> # Optional: Slack API
+SLACK_REDIRECT_URI=http://localhost:3001/api/slack/callback
+ETHEREAL_USER=                      # Auto-generated if empty
+ETHEREAL_PASS=                      # Auto-generated if empty
+MAX_EMAILS_PER_HOUR=200             # Global hourly limit
+MAX_EMAILS_PER_HOUR_PER_SENDER=50   # Per-sender hourly limit
+DELAY_BETWEEN_EMAILS_MS=2000        # Min 2s between sends
+WORKER_CONCURRENCY=5                # Parallel job processing
+
+## 8. HOW TO RUN
+
+# 1. Start infrastructure
+docker compose up -d    # Redis :6379, PostgreSQL :5432, Elasticsearch :9200
+
+# 2. Backend
+cd backend
+cp ../.env.example .env  # Then fill in GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, JWT_SECRET
+npx prisma migrate dev --name init
+npx prisma generate
+npm run dev              # Starts on :3001
+
+# 3. Frontend
+cd frontend
+npm run dev              # Starts on :5173 (proxies /api to :3001)
+
+# URLs
+Frontend:       http://localhost:5173
+Backend API:    http://localhost:3001/api
+Bull Board:     http://localhost:3001/admin/queues
+Prisma Studio:  npx prisma studio (in backend/)
+
+## 9. CURRENT STATUS (as of 2026-09-30)
+
+COMPLETED:
+  ✅ All backend code written (17 source files)
+  ✅ All frontend code written (11 source files)
+  ✅ Docker Compose file
+  ✅ README.md, demo.md, CONTEXT.md
+  ✅ Dependencies installed (both backend and frontend)
+  ✅ Docker Desktop installed
+
+IN PROGRESS:
+  🔧 Docker containers starting (Redis, PostgreSQL, Elasticsearch)
+
+PENDING:
+  ❌ Run Prisma migrations (needs PostgreSQL running)
+  ❌ Configure Google OAuth credentials in .env
+  ❌ Configure Slack App credentials in .env (optional)
+  ❌ End-to-end testing
+  ❌ Test rate limiting under load
+  ❌ Record demo video
+
+## 10. KEY DESIGN DECISIONS & TRADE-OFFS
+
+1. Idempotency Key as BullMQ Job ID
+   → Prevents duplicate job creation. If server restarts and requeuePendingEmails()
+     tries to add a job that's already in Redis, BullMQ silently ignores it.
+
+2. Two-layer persistence (Redis + PostgreSQL)
+   → Redis (BullMQ) handles the queue. PostgreSQL is the source of truth.
+   → If Redis data is lost, requeuePendingEmails() rebuilds from DB.
+
+3. Clock-aligned hour windows (not rolling)
+   → hourWindow = Math.floor(Date.now() / 3600000)
+   → Simpler implementation. Trade-off: a burst at xx:59 and xx:00 could
+     technically send 2x the limit. Acceptable for this scope.
+
+4. Rate-limited jobs: reschedule, don't fail
+   → Jobs go back into the queue with a new delay for the next hour.
+   → Status changes: SCHEDULED → RATE_LIMITED → SCHEDULED (rescheduled)
+
+5. Elasticsearch is optional
+   → If ES is down, the app still works. Search returns empty results.
+   → Makes local dev easier without requiring all services.
+
+6. JWT passed via URL after OAuth
+   → After Google callback, token is in the redirect URL: /auth/callback?token=xxx
+   → Frontend extracts and stores in localStorage.
+   → Production should use httpOnly cookies exclusively.
+
+7. Staggered bulk scheduling
+   → Each recipient[i] gets scheduledAt + (i * delay), not all at once.
+   → Naturally distributes load without needing complex queuing logic.

@@ -14,35 +14,33 @@ interface DashboardProps {
 
 type TabType = 'scheduled' | 'sent';
 
-function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
+function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
   return (
-    <div className="glass-card animate-fade-in" style={{
-      padding: '20px 24px',
+    <div className="surface-card animate-fade-in" style={{
+      padding: '20px',
       display: 'flex',
-      alignItems: 'center',
-      gap: '16px',
+      flexDirection: 'column',
+      gap: '12px',
       flex: 1,
-      minWidth: '180px',
+      minWidth: '160px',
+      transition: 'all 0.2s ease',
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.transform = 'translateY(-2px)';
+      e.currentTarget.style.borderColor = 'var(--color-border-focus)';
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.transform = 'translateY(0)';
+      e.currentTarget.style.borderColor = 'var(--color-border)';
     }}>
-      <div style={{
-        width: '44px',
-        height: '44px',
-        borderRadius: 'var(--radius-md)',
-        background: `${color}15`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: color,
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-muted)' }}>
         {icon}
-      </div>
-      <div>
-        <p style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-text-primary)', lineHeight: 1 }}>
-          {value}
-        </p>
-        <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+        <span style={{ fontSize: '13px', fontWeight: 500 }}>
           {label}
-        </p>
+        </span>
+      </div>
+      <div style={{ fontSize: '32px', fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1 }}>
+        {value.toLocaleString()}
       </div>
     </div>
   );
@@ -84,17 +82,15 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
 
   useEffect(() => {
     fetchEmails();
-    // Auto-refresh every 10 seconds
     const interval = setInterval(fetchEmails, 10000);
     return () => clearInterval(interval);
   }, [fetchEmails]);
 
-  // Check URL params for Slack callback
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const slackStatus = params.get('slack');
     if (slackStatus === 'connected') {
-      toast.success('🎉 Slack connected successfully!');
+      toast.success('Slack connected successfully');
       window.history.replaceState({}, '', '/dashboard');
     } else if (slackStatus === 'error') {
       toast.error('Failed to connect Slack');
@@ -121,7 +117,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
         setSentTotal(data.total);
       }
     } catch {
-      toast.error('Search failed — Elasticsearch may not be available');
+      toast.error('Search failed');
     } finally {
       setLoading(false);
     }
@@ -134,88 +130,120 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
   const totalPages = Math.ceil(currentTotal / 20);
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-bg-primary)' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <Header user={user} onLogout={onLogout} />
 
-      <main style={{ padding: '24px 32px', maxWidth: '1400px', margin: '0 auto' }}>
+      <main style={{ flex: 1, padding: '40px 32px', maxWidth: '1280px', margin: '0 auto', width: '100%' }}>
+        
+        {/* Hero Section */}
+        <div style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h1 style={{ fontSize: '28px', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '8px', letterSpacing: '-0.02em' }}>
+              Emails
+            </h1>
+            <p style={{ fontSize: '15px', color: 'var(--color-text-secondary)' }}>
+              Manage and monitor your outbound email pipeline.
+            </p>
+          </div>
+          <button className="btn btn-primary btn-lg" onClick={() => setShowCompose(true)}>
+            <Plus size={18} />
+            Compose New Email
+          </button>
+        </div>
+
         {/* Stats Row */}
         {stats && (
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
-            <StatCard icon={<Layers size={22} />} label="Delayed" value={stats.delayed} color="#42a5f5" />
-            <StatCard icon={<Clock size={22} />} label="Waiting" value={stats.waiting} color="#ffa726" />
-            <StatCard icon={<BarChart3 size={22} />} label="Active" value={stats.active} color="#6c5ce7" />
-            <StatCard icon={<Send size={22} />} label="Completed" value={stats.completed} color="#00d2a0" />
-            <StatCard icon={<AlertTriangle size={22} />} label="Failed" value={stats.failed} color="#ef5350" />
+          <div style={{ display: 'flex', gap: '20px', marginBottom: '48px', flexWrap: 'wrap' }}>
+            <StatCard icon={<Layers size={16} color="var(--color-info)" />} label="Delayed" value={stats.delayed} />
+            <StatCard icon={<Clock size={16} color="var(--color-warning)" />} label="Waiting" value={stats.waiting} />
+            <StatCard icon={<BarChart3 size={16} color="var(--color-accent)" />} label="Active" value={stats.active} />
+            <StatCard icon={<Send size={16} color="var(--color-success)" />} label="Completed" value={stats.completed} />
+            <StatCard icon={<AlertTriangle size={16} color="var(--color-error)" />} label="Failed" value={stats.failed} />
           </div>
         )}
 
-        {/* Controls Bar */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '20px',
-          flexWrap: 'wrap',
-          gap: '12px',
-        }}>
-          {/* Tabs */}
-          <div className="tab-list">
-            <button
-              className={`tab ${activeTab === 'scheduled' ? 'tab-active' : ''}`}
-              onClick={() => setActiveTab('scheduled')}
-            >
-              <Clock size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-              Scheduled ({scheduledTotal})
-            </button>
-            <button
-              className={`tab ${activeTab === 'sent' ? 'tab-active' : ''}`}
-              onClick={() => setActiveTab('sent')}
-            >
-              <Send size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-              Sent ({sentTotal})
-            </button>
-          </div>
-
-          {/* Right controls */}
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            {/* Search */}
-            <div style={{ position: 'relative' }}>
-              <input
-                className="input"
-                type="text"
-                placeholder="Search emails..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                style={{ paddingLeft: '36px', width: '260px' }}
-              />
-              <Search
-                size={16}
-                style={{
-                  position: 'absolute',
-                  left: '12px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--color-text-muted)',
-                }}
-              />
+        {/* List Section */}
+        <div style={{ marginBottom: '16px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            Email Activity
+          </h2>
+        </div>
+        
+        <div className="surface-card" style={{ padding: '0', overflow: 'hidden' }}>
+          {/* Toolbar */}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--color-border)',
+            background: 'var(--color-bg-card)'
+          }}>
+            <div className="tab-list">
+              <button
+                className={`tab ${activeTab === 'scheduled' ? 'tab-active' : ''}`}
+                onClick={() => { setActiveTab('scheduled'); setSearchQuery(''); }}
+              >
+                Scheduled
+                <span style={{ 
+                  marginLeft: '8px', 
+                  fontSize: '11px', 
+                  fontWeight: 600,
+                  padding: '2px 8px', 
+                  borderRadius: '12px', 
+                  background: activeTab === 'scheduled' ? 'var(--color-border)' : 'transparent',
+                  color: activeTab === 'scheduled' ? 'var(--color-text-primary)' : 'var(--color-text-muted)'
+                }}>
+                  {scheduledTotal}
+                </span>
+              </button>
+              <button
+                className={`tab ${activeTab === 'sent' ? 'tab-active' : ''}`}
+                onClick={() => { setActiveTab('sent'); setSearchQuery(''); }}
+              >
+                Sent
+                <span style={{ 
+                  marginLeft: '8px', 
+                  fontSize: '11px', 
+                  fontWeight: 600,
+                  padding: '2px 8px', 
+                  borderRadius: '12px', 
+                  background: activeTab === 'sent' ? 'var(--color-border)' : 'transparent',
+                  color: activeTab === 'sent' ? 'var(--color-text-primary)' : 'var(--color-text-muted)'
+                }}>
+                  {sentTotal}
+                </span>
+              </button>
             </div>
 
-            {/* Refresh */}
-            <button className="btn btn-secondary btn-sm" onClick={fetchEmails} title="Refresh">
-              <RefreshCcw size={14} />
-            </button>
-
-            {/* Compose */}
-            <button className="btn btn-primary" onClick={() => setShowCompose(true)}>
-              <Plus size={16} />
-              Compose Email
-            </button>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div style={{ position: 'relative' }}>
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="Search emails..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  style={{ paddingLeft: '36px', width: '280px', height: '36px', borderRadius: 'var(--radius-md)' }}
+                />
+                <Search
+                  size={14}
+                  style={{
+                    position: 'absolute',
+                    left: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--color-text-muted)',
+                  }}
+                />
+              </div>
+              <button className="btn btn-secondary btn-icon" onClick={fetchEmails} title="Refresh" style={{ height: '36px', width: '36px' }}>
+                <RefreshCcw size={14} />
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Email Table */}
-        <div className="glass-card" style={{ padding: '0', overflow: 'hidden' }}>
           <EmailTable emails={currentEmails} loading={loading} type={activeTab} />
         </div>
 
@@ -225,21 +253,21 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            gap: '8px',
-            marginTop: '20px',
+            gap: '12px',
+            marginTop: '24px',
           }}>
             <button
-              className="btn btn-sm btn-secondary"
+              className="btn btn-sm btn-ghost"
               disabled={currentPage <= 1}
               onClick={() => setCurrentPage(currentPage - 1)}
             >
               Previous
             </button>
-            <span style={{ fontSize: '13px', color: 'var(--color-text-muted)', padding: '0 12px' }}>
+            <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
               Page {currentPage} of {totalPages}
             </span>
             <button
-              className="btn btn-sm btn-secondary"
+              className="btn btn-sm btn-ghost"
               disabled={currentPage >= totalPages}
               onClick={() => setCurrentPage(currentPage + 1)}
             >
@@ -249,7 +277,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
         )}
       </main>
 
-      {/* Compose Modal */}
       {showCompose && (
         <ComposeEmail
           onClose={() => setShowCompose(false)}

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { X, Upload, Send, Clock, FileText } from 'lucide-react';
+import { X, Upload, Send, Clock, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 
@@ -29,7 +29,11 @@ export default function ComposeEmail({ onClose, onScheduled }: ComposeEmailProps
     const found = text.match(emailRegex) || [];
     const unique = [...new Set(found)];
     setRecipients(unique);
-    toast.success(`Found ${unique.length} email addresses`);
+    if (unique.length > 0) {
+      toast.success(`Parsed ${unique.length} email addresses`);
+    } else {
+      toast.error('No valid emails found in file');
+    }
   }, []);
 
   const handleFileDrop = (e: React.DragEvent) => {
@@ -72,7 +76,6 @@ export default function ComposeEmail({ onClose, onScheduled }: ComposeEmailProps
 
     try {
       if (allRecipients.length === 1) {
-        // Single email
         await api.post('/emails/schedule', {
           fromEmail,
           toEmail: allRecipients[0],
@@ -82,7 +85,6 @@ export default function ComposeEmail({ onClose, onScheduled }: ComposeEmailProps
           senderLabel,
         });
       } else {
-        // Bulk emails via FormData (for file upload support)
         const formData = new FormData();
         formData.append('fromEmail', fromEmail);
         formData.append('subject', subject);
@@ -101,7 +103,7 @@ export default function ComposeEmail({ onClose, onScheduled }: ComposeEmailProps
         });
       }
 
-      toast.success(`${allRecipients.length} email(s) scheduled successfully! 🚀`);
+      toast.success(`${allRecipients.length} email(s) scheduled successfully`);
       onScheduled();
       onClose();
     } catch (error: any) {
@@ -113,199 +115,246 @@ export default function ComposeEmail({ onClose, onScheduled }: ComposeEmailProps
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '680px' }}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '640px', padding: '0' }}>
+        
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          padding: '20px 24px',
+          borderBottom: '1px solid var(--color-border)'
+        }}>
           <div>
-            <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              📨 Compose New Email
+            <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+              Compose Email
             </h2>
-            <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-              Schedule emails to be sent at a specific time
+            <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+              Schedule a campaign or send a single message
             </p>
           </div>
-          <button className="btn btn-icon btn-ghost" onClick={onClose}>
-            <X size={20} />
+          <button className="btn btn-icon btn-ghost" onClick={onClose} aria-label="Close modal">
+            <X size={18} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
-          {/* From Email */}
-          <div style={{ marginBottom: '16px' }}>
-            <label className="label">From Email *</label>
-            <input
-              className="input"
-              type="email"
-              placeholder="sender@example.com"
-              value={fromEmail}
-              onChange={(e) => setFromEmail(e.target.value)}
-              required
-            />
-          </div>
-
-          {/* Sender Label */}
-          <div style={{ marginBottom: '16px' }}>
-            <label className="label">Sender Label</label>
-            <input
-              className="input"
-              type="text"
-              placeholder="e.g. Campaign-A, Marketing"
-              value={senderLabel}
-              onChange={(e) => setSenderLabel(e.target.value)}
-            />
-          </div>
-
-          {/* Recipients */}
-          <div style={{ marginBottom: '16px' }}>
-            <label className="label">Recipients *</label>
-            <textarea
-              className="input"
-              placeholder="Enter email addresses (comma or newline separated)"
-              value={singleRecipient}
-              onChange={(e) => setSingleRecipient(e.target.value)}
-              style={{ minHeight: '70px' }}
-            />
-          </div>
-
-          {/* CSV Upload */}
-          <div style={{ marginBottom: '16px' }}>
-            <label className="label">Or Upload CSV/Text File</label>
-            <div
-              className={`upload-zone ${dragOver ? 'drag-over' : ''}`}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={handleFileDrop}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,.txt,.xlsx"
-                onChange={handleFileSelect}
-                style={{ display: 'none' }}
-              />
-              {file ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
-                  <FileText size={24} color="var(--color-accent)" />
-                  <div style={{ textAlign: 'left' }}>
-                    <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                      {file.name}
-                    </p>
-                    <p style={{ fontSize: '12px', color: 'var(--color-success)' }}>
-                      ✅ {recipients.length} email addresses detected
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-icon btn-ghost"
-                    onClick={(e) => { e.stopPropagation(); setFile(null); setRecipients([]); }}
-                  >
-                    <X size={16} />
-                  </button>
+          <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* 1. Sender Section */}
+            <section>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '12px' }}>Sender</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label className="label">From Email *</label>
+                  <input
+                    className="input"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={fromEmail}
+                    onChange={(e) => setFromEmail(e.target.value)}
+                    required
+                  />
                 </div>
-              ) : (
-                <>
-                  <Upload size={32} color="var(--color-text-muted)" style={{ marginBottom: '8px' }} />
-                  <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                    Drag & drop a file or <span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>click to browse</span>
-                  </p>
-                  <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-                    Supports CSV, TXT files with email addresses
-                  </p>
-                </>
-              )}
-            </div>
+                <div>
+                  <label className="label">Sender Label</label>
+                  <input
+                    className="input"
+                    type="text"
+                    placeholder="e.g. Newsletter, Marketing"
+                    value={senderLabel}
+                    onChange={(e) => setSenderLabel(e.target.value)}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <div style={{ height: '1px', background: 'var(--color-border)' }} />
+
+            {/* 2. Recipients Section */}
+            <section>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '12px' }}>Recipients</h3>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div
+                  className={`upload-zone ${dragOver ? 'drag-over' : ''}`}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleFileDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv,.txt,.xlsx"
+                    onChange={handleFileSelect}
+                    style={{ display: 'none' }}
+                  />
+                  {file ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ padding: '8px', background: 'var(--color-bg-elevated)', borderRadius: '8px' }}>
+                          <FileText size={20} color="var(--color-text-secondary)" />
+                        </div>
+                        <div style={{ textAlign: 'left' }}>
+                          <p style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                            {file.name}
+                          </p>
+                          {recipients.length > 0 ? (
+                            <p style={{ fontSize: '12px', color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                              <CheckCircle2 size={12} /> {recipients.length} addresses detected
+                            </p>
+                          ) : (
+                            <p style={{ fontSize: '12px', color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                              <AlertCircle size={12} /> No valid addresses found
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-icon btn-ghost"
+                        onClick={(e) => { e.stopPropagation(); setFile(null); setRecipients([]); }}
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                      <Upload size={24} color="var(--color-text-muted)" />
+                      <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                        Drag a CSV file here or <span style={{ color: 'var(--color-text-primary)', fontWeight: 500, textDecoration: 'underline' }}>browse</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="label">Manual Entry</label>
+                  <textarea
+                    className="input"
+                    placeholder="Enter emails separated by commas"
+                    value={singleRecipient}
+                    onChange={(e) => setSingleRecipient(e.target.value)}
+                    style={{ minHeight: '60px' }}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <div style={{ height: '1px', background: 'var(--color-border)' }} />
+
+            {/* 3. Content Section */}
+            <section>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '12px' }}>Message</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label className="label">Subject *</label>
+                  <input
+                    className="input"
+                    type="text"
+                    placeholder="What is this about?"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label">Body *</label>
+                  <textarea
+                    className="input"
+                    placeholder="Write your email content..."
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    required
+                    style={{ minHeight: '140px', fontFamily: 'var(--font-mono, monospace)', fontSize: '12px' }}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <div style={{ height: '1px', background: 'var(--color-border)' }} />
+
+            {/* 4. Scheduling Section */}
+            <section>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '12px' }}>Scheduling</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', background: 'var(--color-bg-elevated)', padding: '16px', borderRadius: '8px' }}>
+                <div>
+                  <label className="label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Clock size={12} /> Start Time *
+                  </label>
+                  <input
+                    className="input"
+                    type="datetime-local"
+                    value={scheduledAt}
+                    onChange={(e) => setScheduledAt(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label">Delay Between</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      className="input"
+                      type="number"
+                      min="500"
+                      value={delayBetween}
+                      onChange={(e) => setDelayBetween(e.target.value)}
+                      style={{ paddingRight: '36px' }}
+                    />
+                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: 'var(--color-text-muted)' }}>ms</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Hourly Limit</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      className="input"
+                      type="number"
+                      min="1"
+                      value={hourlyLimit}
+                      onChange={(e) => setHourlyLimit(e.target.value)}
+                      style={{ paddingRight: '48px' }}
+                    />
+                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: 'var(--color-text-muted)' }}>/ hr</span>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
 
-          {/* Subject */}
-          <div style={{ marginBottom: '16px' }}>
-            <label className="label">Subject *</label>
-            <input
-              className="input"
-              type="text"
-              placeholder="Email subject line"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              required
-            />
-          </div>
-
-          {/* Body */}
-          <div style={{ marginBottom: '16px' }}>
-            <label className="label">Body *</label>
-            <textarea
-              className="input"
-              placeholder="Write your email content here (HTML supported)"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              required
-              style={{ minHeight: '120px' }}
-            />
-          </div>
-
-          {/* Schedule Settings */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr',
-            gap: '12px',
-            marginBottom: '24px',
-            padding: '16px',
-            background: 'var(--color-bg-card)',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--color-border)',
+          {/* Footer */}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            padding: '16px 24px', 
+            background: 'var(--color-bg-secondary)', 
+            borderTop: '1px solid var(--color-border)',
+            borderBottomLeftRadius: 'var(--radius-xl)',
+            borderBottomRightRadius: 'var(--radius-xl)'
           }}>
-            <div>
-              <label className="label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Clock size={12} /> Start Time *
-              </label>
-              <input
-                className="input"
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(e) => setScheduledAt(e.target.value)}
-                required
-              />
+            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              * Required fields
+            </span>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button type="button" className="btn btn-secondary" onClick={onClose}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={loading}>
+                {loading ? (
+                  <>
+                    <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
+                    Scheduling...
+                  </>
+                ) : (
+                  <>
+                    <Send size={14} />
+                    Schedule {recipients.length > 0 ? `${recipients.length} Emails` : 'Email'}
+                  </>
+                )}
+              </button>
             </div>
-            <div>
-              <label className="label">Delay Between (ms)</label>
-              <input
-                className="input"
-                type="number"
-                min="500"
-                value={delayBetween}
-                onChange={(e) => setDelayBetween(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="label">Hourly Limit</label>
-              <input
-                className="input"
-                type="number"
-                min="1"
-                value={hourlyLimit}
-                onChange={(e) => setHourlyLimit(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Submit */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary btn-lg" disabled={loading}>
-              {loading ? (
-                <>
-                  <div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
-                  Scheduling...
-                </>
-              ) : (
-                <>
-                  <Send size={16} />
-                  Schedule {recipients.length > 0 ? `${recipients.length} Emails` : 'Email'}
-                </>
-              )}
-            </button>
           </div>
         </form>
       </div>

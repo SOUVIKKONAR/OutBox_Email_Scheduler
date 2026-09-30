@@ -42,99 +42,115 @@ export default function Header({ user, onLogout }: HeaderProps) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: '16px 32px',
+      padding: '0 24px',
+      height: '52px',
       background: 'var(--color-bg-secondary)',
       borderBottom: '1px solid var(--color-border)',
       position: 'sticky',
       top: 0,
       zIndex: 100,
     }}>
-      {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      {/* Left — Brand */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <div style={{
-          width: '36px',
-          height: '36px',
+          width: '28px',
+          height: '28px',
           borderRadius: 'var(--radius-md)',
-          background: 'linear-gradient(135deg, var(--color-accent), #8b5cf6)',
+          background: 'var(--color-accent)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 0 16px var(--color-accent-glow)',
         }}>
-          <Mail size={20} color="white" />
+          <Mail size={15} color="white" />
         </div>
-        <div>
-          <h1 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--color-text-primary)', lineHeight: 1.2 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+          <span style={{
+            fontSize: '14px',
+            fontWeight: 700,
+            color: 'var(--color-text-primary)',
+            letterSpacing: '-0.02em',
+          }}>
             OutBox
-          </h1>
-          <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', letterSpacing: '0.05em' }}>
+          </span>
+          <span style={{
+            fontSize: '11px',
+            color: 'var(--color-text-muted)',
+            fontWeight: 400,
+          }}>
             Email Scheduler
-          </p>
+          </span>
         </div>
       </div>
 
-      {/* Right section */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        {/* Slack Connect */}
+      {/* Right — Actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        {/* Slack */}
         {slackStatus?.connected ? (
           <button
-            className="btn btn-sm btn-secondary"
+            className="btn btn-sm btn-ghost"
             onClick={handleSlackDisconnect}
-            style={{ gap: '6px' }}
+            style={{ gap: '6px', fontSize: '12px' }}
           >
-            <Hash size={14} />
-            <span style={{ color: 'var(--color-success)' }}>Slack Connected</span>
+            <span style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: 'var(--color-success)',
+              display: 'inline-block',
+            }} />
+            <span style={{ color: 'var(--color-text-secondary)' }}>Slack</span>
           </button>
         ) : (
           <button
-            className="btn btn-sm btn-secondary"
+            className="btn btn-sm btn-ghost"
             onClick={handleSlackConnect}
-            style={{ gap: '6px' }}
+            style={{ gap: '6px', fontSize: '12px' }}
           >
-            <Hash size={14} />
-            Connect Slack
+            <Hash size={12} />
+            <span>Connect Slack</span>
           </button>
         )}
 
+        {/* Divider */}
+        <div style={{ width: '1px', height: '20px', background: 'var(--color-border)', margin: '0 4px' }} />
+
         {/* Notifications */}
-        <button className="btn btn-icon btn-ghost" style={{ position: 'relative' }}>
-          <Bell size={18} />
+        <button className="btn btn-icon btn-ghost" aria-label="Notifications">
+          <Bell size={16} />
         </button>
 
-        {/* User info */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* Divider */}
+        <div style={{ width: '1px', height: '20px', background: 'var(--color-border)', margin: '0 4px' }} />
+
+        {/* User */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px' }}>
           {user.avatar ? (
             <img
               src={user.avatar}
               alt={user.name}
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                border: '2px solid var(--color-border)',
-              }}
+              style={{ width: '26px', height: '26px', borderRadius: '50%' }}
             />
           ) : (
             <div style={{
-              width: '32px',
-              height: '32px',
+              width: '26px',
+              height: '26px',
               borderRadius: '50%',
               background: 'var(--color-accent)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '14px',
-              fontWeight: 700,
+              fontSize: '11px',
+              fontWeight: 600,
               color: 'white',
             }}>
               {user.name.charAt(0).toUpperCase()}
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.2 }}>
               {user.name}
             </span>
-            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: 1.2 }}>
               {user.email}
             </span>
           </div>
@@ -145,8 +161,9 @@ export default function Header({ user, onLogout }: HeaderProps) {
           className="btn btn-icon btn-ghost"
           onClick={onLogout}
           title="Logout"
+          aria-label="Logout"
         >
-          <LogOut size={18} />
+          <LogOut size={15} />
         </button>
       </div>
     </header>

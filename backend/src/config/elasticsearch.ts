@@ -129,7 +129,7 @@ export async function searchEmails(
     });
 
     const hits = result.hits.hits.map((hit) => ({
-      id: hit._id,
+      id: hit._id as string,
       ...(hit._source as Record<string, unknown>),
     }));
 

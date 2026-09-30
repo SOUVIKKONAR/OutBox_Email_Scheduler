@@ -4,7 +4,7 @@ import { parse } from 'csv-parse/sync';
 import { authMiddleware } from '../middleware/auth';
 import { AuthRequest } from '../types';
 import { scheduleEmail, scheduleBulkEmails, getUserEmails } from '../services/emailService';
-import { getQueueStats } from '../queues/emailQueue';
+import { prisma } from '../config/db';
 import { getRateLimitInfo } from '../services/rateLimiter';
 import { env } from '../config/env';
 import { EmailStatus } from '@prisma/client';
@@ -194,9 +194,34 @@ router.get('/all', async (req: AuthRequest, res: Response) => {
 });
 
 // ── GET /api/emails/stats — Get queue stats ──────────────────────
-router.get('/stats', async (_req: AuthRequest, res: Response) => {
+router.get('/stats', async (req: AuthRequest, res: Response) => {
   try {
-    const stats = await getQueueStats();
+    const counts = await prisma.email.groupBy({
+      by: ['status'],
+      where: { userId: req.user!.id },
+      _count: { status: true }
+    });
+
+    const stats = {
+      waiting: 0,
+      active: 0,
+      completed: 0,
+      failed: 0,
+      delayed: 0,
+    };
+
+    counts.forEach(c => {
+      if (c.status === 'SCHEDULED' || c.status === 'RATE_LIMITED') {
+        stats.delayed += c._count.status;
+      } else if (c.status === 'QUEUED' || c.status === 'SENDING') {
+        stats.active += c._count.status;
+      } else if (c.status === 'SENT') {
+        stats.completed += c._count.status;
+      } else if (c.status === 'FAILED') {
+        stats.failed += c._count.status;
+      }
+    });
+
     res.json(stats);
   } catch (error) {
     console.error('Get stats error:', error);

@@ -14,7 +14,6 @@ export default function ComposeEmail({ onClose, onScheduled }: ComposeEmailProps
   const [body, setBody] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [delayBetween, setDelayBetween] = useState('2000');
-  const [hourlyLimit, setHourlyLimit] = useState('50');
   const [senderLabel, setSenderLabel] = useState('');
   const [recipients, setRecipients] = useState<string[]>([]);
   const [singleRecipient, setSingleRecipient] = useState('');
@@ -91,7 +90,6 @@ export default function ComposeEmail({ onClose, onScheduled }: ComposeEmailProps
         formData.append('body', body);
         formData.append('scheduledAt', new Date(scheduledAt).toISOString());
         formData.append('delayBetweenEmailsMs', delayBetween);
-        formData.append('hourlyLimit', hourlyLimit);
         formData.append('senderLabel', senderLabel);
         formData.append('recipients', JSON.stringify(allRecipients));
         if (file) {
@@ -278,7 +276,7 @@ export default function ComposeEmail({ onClose, onScheduled }: ComposeEmailProps
             {/* 4. Scheduling Section */}
             <section>
               <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '12px' }}>Scheduling</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', background: 'var(--color-bg-elevated)', padding: '16px', borderRadius: '8px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: 'var(--color-bg-elevated)', padding: '16px', borderRadius: '8px' }}>
                 <div>
                   <label className="label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Clock size={12} /> Start Time *
@@ -303,20 +301,6 @@ export default function ComposeEmail({ onClose, onScheduled }: ComposeEmailProps
                       style={{ paddingRight: '36px' }}
                     />
                     <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: 'var(--color-text-muted)' }}>ms</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="label">Hourly Limit</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      className="input"
-                      type="number"
-                      min="1"
-                      value={hourlyLimit}
-                      onChange={(e) => setHourlyLimit(e.target.value)}
-                      style={{ paddingRight: '48px' }}
-                    />
-                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: 'var(--color-text-muted)' }}>/ hr</span>
                   </div>
                 </div>
               </div>

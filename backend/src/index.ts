@@ -37,6 +37,7 @@ async function main() {
   serverAdapter.setBasePath('/admin/queues');
 
   createBullBoard({
+    // @ts-ignore - version mismatch between bull-board and bullmq
     queues: [new BullMQAdapter(emailQueue)],
     serverAdapter,
   });

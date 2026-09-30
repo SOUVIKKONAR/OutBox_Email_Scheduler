@@ -4,7 +4,16 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
-  avatar?: string;
+  avatar?: string | null;
+}
+
+declare global {
+  namespace Express {
+    interface User extends AuthUser {}
+    interface Request {
+      user?: AuthUser;
+    }
+  }
 }
 
 export interface AuthRequest extends Request {

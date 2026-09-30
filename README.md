@@ -2,20 +2,7 @@
 
 OutBox is a robust, production-ready email scheduling application built to handle bulk email scheduling with built-in rate limiting, background job processing, and full-text search capabilities.
 
-## 🚀 Features
-
-- **Google OAuth Authentication**: Secure login using Passport.js and JWT.
-- **Bulk Email Scheduling**: Schedule single or bulk emails via UI or CSV upload.
-- **Background Processing**: Reliable job processing using **BullMQ** and **Redis**.
-- **Rate Limiting**: Distributed Redis-backed rate limiter enforcing strict limits (global and per-sender).
-- **Full-Text Search**: Instant email search using **Elasticsearch**.
-- **SMTP Integration**: Auto-provisioned **Ethereal** test email accounts for previewing sent emails.
-- **Slack Notifications**: Real-time webhook alerts when users hit their rate limits.
-- **Modern Dashboard**: Beautiful UI built with **React**, **Vite**, and **Tailwind CSS**.
-
----
-
-## 🏗️ Architecture
+## 🚀 Architecture Overview
 
 ```mermaid
 graph LR
@@ -34,14 +21,14 @@ graph LR
 
 ---
 
-## ⚙️ Getting Started
+## ⚙️ Prerequisites & Setup
 
 ### 1. Prerequisites
 Ensure you have the following installed:
-- [Node.js](https://nodejs.org/) (v18+)
-- [Docker & Docker Compose](https://www.docker.com/)
+- Node.js (v18+)
+- Docker & Docker Compose
 
-### 2. Infrastructure Setup
+### 2. Infrastructure Setup (Docker, PostgreSQL, Redis, Elasticsearch)
 Start the required background services (Postgres, Redis, Elasticsearch) using Docker:
 ```bash
 docker-compose up -d
@@ -53,8 +40,6 @@ Navigate to the `backend` directory and install dependencies:
 cd backend
 npm install
 ```
-
-Configure your environment variables by creating a `.env` file (copy from `.env.example` if available) and adding your Google OAuth credentials.
 
 Initialize the database schema:
 ```bash
@@ -77,18 +62,54 @@ Start the frontend development server:
 ```bash
 npm run dev
 ```
-
 Visit `http://localhost:5173` to view the application!
 
 ---
 
-## 📊 BullMQ Dashboard
-You can monitor the background queues, failed jobs, and active workers by visiting the built-in Bull Board at:
-**[http://localhost:3001/admin/queues](http://localhost:3001/admin/queues)**
+## 🔧 Environment Variables
 
-## 🛡️ Rate Limiting & Resilience
-OutBox uses Redis to maintain atomic counters for rate limiting. 
-- **Per-Sender Limit**: (e.g., 50 emails/hour).
-- **Global Limit**: (e.g., 200 emails/hour).
+An `.env.example` file is provided in the root. 
 
-When a limit is reached, BullMQ natively pauses the specific email job and reschedules it into the future (`job.moveToDelayed`), ensuring no emails are lost and third-party SMTP limits are strictly respected.
+- **ETHEREAL_USER / ETHEREAL_PASS**: Ethereal setup is auto-generated on first run.
+- **GOOGLE_CLIENT_ID / SECRET**: Set up Google OAuth credentials in Google Cloud Console.
+- **SLACK_CLIENT_ID / SECRET**: Set up Slack OAuth credentials for notifications.
+
+---
+
+## 💡 Explanations of Key Mechanisms
+
+### Rate Limiting Explanation
+OutBox enforces both global (`MAX_EMAILS_PER_HOUR`) and per-sender (`MAX_EMAILS_PER_HOUR_PER_SENDER`) limits. Instead of relying on vulnerable client-side checks, rate limits are managed atomically via a **Redis Lua script**. If a limit is hit, the job calculates the remaining time in the current hour window and schedules itself to run exactly when the limit resets.
+
+### Concurrency Explanation
+Workers operate concurrently up to `WORKER_CONCURRENCY`. However, a strict `DELAY_BETWEEN_EMAILS_MS` must be enforced across all workers. This is achieved via a **Redis-backed atomic spacer** which reserves the next available global timestamp slot, allowing true parallel processing without violating minimum send delays.
+
+### Restart Persistence Explanation
+Scheduled jobs are persisted in **PostgreSQL**. On backend startup, a recovery function (`requeuePendingEmails`) fetches all pending jobs and re-queues them into **BullMQ**. This ensures that jobs delayed by server downtime are immediately sent, and future emails are never lost across restarts. No OS cron is used; BullMQ's native delayed queues handle precise scheduling.
+
+### Idempotency Explanation
+Every scheduled email generates a deterministic `idempotencyKey` based on the user ID, sender, recipient, scheduled time, and batch ID. This prevents the API from enqueuing duplicate logical emails. Application-level idempotency prevents duplicate dispatching; however, exact-once SMTP delivery is inherently unachievable due to network crash windows post-SMTP accept.
+
+### Elasticsearch Explanation
+Emails are pushed to **Elasticsearch** immediately upon creation and updated upon sending. This provides fuzzy, high-performance, full-text search isolated strictly by the user's ID. PostgreSQL remains the single source of truth; Elasticsearch acts strictly as the search index.
+
+### BullMQ Worker Setup
+The workers initialize securely connected to the same Redis instance. You can monitor the background queues by visiting the built-in Bull Board at **[http://localhost:3001/admin/queues](http://localhost:3001/admin/queues)**.
+
+---
+
+## 📑 API Reference
+
+- `POST /api/auth/google`: Initiates Google OAuth.
+- `GET /api/slack/connect`: Initiates Slack OAuth.
+- `POST /api/emails/schedule`: Schedules a single email.
+- `POST /api/emails/schedule-bulk`: Schedules bulk emails from CSV/text.
+- `GET /api/search`: Fuzzy searches emails using Elasticsearch.
+
+---
+
+## ✅ Features Implemented & Assumptions
+- **Features Implemented**: Full scheduling UI, distributed rate limiting, robust idempotency, Slack notifications, search functionality, resilient restart recovery.
+- **Assumptions**: We assume Slack Webhook URLs shouldn't trigger job failures if Slack APIs temporarily fail; we strictly isolate these errors from the email delivery pipeline.
+- **Trade-offs**: Used Ethereal instead of production SMTP providers to avoid SPAM costs. Opted for Redis Lua scripts instead of complex database locking for higher rate limiting throughput.
+- **Limitations**: Exact-once SMTP delivery guarantee remains impossible due to standard SMTP protocol constraints; application guarantees idempotency *before* handoff.

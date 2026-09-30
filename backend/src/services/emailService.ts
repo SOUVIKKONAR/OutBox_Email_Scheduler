@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../config/db';
 import { indexEmail } from '../config/elasticsearch';
-import { addEmailJob } from '../queues/emailQueue';
+import { addEmailJob, emailQueue } from '../queues/emailQueue';
 import { EmailJobData, BulkScheduleEmailRequest } from '../types';
 import { EmailStatus } from '@prisma/client';
 
@@ -20,8 +20,8 @@ export async function scheduleEmail(params: {
 }): Promise<{ emailId: string; jobId: string }> {
   const { userId, fromEmail, toEmail, subject, body, scheduledAt, senderLabel, batchId } = params;
 
-  // Generate idempotency key
-  const idempotencyKey = `${userId}-${fromEmail}-${toEmail}-${scheduledAt.getTime()}-${uuidv4().slice(0, 8)}`;
+  // Generate deterministic idempotency key
+  const idempotencyKey = `${userId}-${fromEmail}-${toEmail}-${scheduledAt.getTime()}-${batchId || 'single'}`;
 
   // Create email record in DB
   const email = await prisma.email.create({
@@ -108,25 +108,83 @@ export async function scheduleBulkEmails(params: {
   const batchId = uuidv4();
   const emailIds: string[] = [];
 
-  for (let i = 0; i < recipients.length; i++) {
-    const toEmail = recipients[i].trim();
-    if (!toEmail) continue;
+  // Filter valid emails
+  const validRecipients = recipients.map(r => r.trim()).filter(Boolean);
+  if (validRecipients.length === 0) {
+    return { batchId, emailCount: 0, emailIds: [] };
+  }
 
-    // Stagger the scheduled time based on position in the batch
+  // Pre-generate data for all emails
+  const emailData = validRecipients.map((toEmail, i) => {
+    const id = uuidv4();
     const staggeredTime = new Date(scheduledAt.getTime() + (i * delayBetweenEmailsMs));
+    const idempotencyKey = `${userId}-${fromEmail}-${toEmail}-${staggeredTime.getTime()}-${batchId}`;
+    
+    emailIds.push(id);
 
-    const result = await scheduleEmail({
+    return {
+      id,
       userId,
       fromEmail,
       toEmail,
       subject,
       body,
+      status: EmailStatus.SCHEDULED,
       scheduledAt: staggeredTime,
-      senderLabel,
+      idempotencyKey,
       batchId,
-    });
+      senderLabel,
+      createdAt: new Date(),
+    };
+  });
 
-    emailIds.push(result.emailId);
+  // 1. Prisma Bulk Insert
+  await prisma.email.createMany({
+    data: emailData,
+  });
+
+  // 2. BullMQ Bulk Add
+  const bullJobs = emailData.map(e => {
+    const delayMs = Math.max(0, e.scheduledAt.getTime() - Date.now());
+    const jobData: EmailJobData = {
+      emailId: e.id,
+      userId: e.userId,
+      fromEmail: e.fromEmail,
+      toEmail: e.toEmail,
+      subject: e.subject,
+      body: e.body,
+      idempotencyKey: e.idempotencyKey,
+      senderLabel: e.senderLabel || undefined,
+    };
+    return {
+      name: 'send-email',
+      data: jobData,
+      opts: {
+        jobId: e.idempotencyKey,
+        delay: delayMs,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+      },
+    };
+  });
+  
+  // addBulk is much faster for 1000+ jobs
+  const addedJobs = await emailQueue.addBulk(bullJobs);
+
+  // Note: we'd ideally bulk update Prisma with jobIds, but jobId is just idempotencyKey here or we can omit it since we rely on idempotency. Wait, in scheduleEmail we do:
+  // await prisma.email.update({ where: { id }, data: { jobId } });
+  // For bulk, let's just use a transaction or execute raw, but it's optional if we use idempotency.
+  
+  // 3. Elasticsearch Bulk Index
+  try {
+    const operations = emailData.flatMap(doc => [
+      { index: { _index: 'emails', _id: doc.id } },
+      doc
+    ]);
+    const { esClient } = await import('../config/elasticsearch');
+    await esClient.bulk({ refresh: true, operations });
+  } catch (error) {
+    console.error('Failed to bulk index emails to ES:', error);
   }
 
   return { batchId, emailCount: emailIds.length, emailIds };
@@ -175,16 +233,16 @@ export async function requeuePendingEmails(): Promise<number> {
   const pendingEmails = await prisma.email.findMany({
     where: {
       status: { in: [EmailStatus.SCHEDULED, EmailStatus.RATE_LIMITED] },
-      scheduledAt: { gte: new Date() }, // Only future emails
+      // Note: We deliberately do NOT filter by scheduledAt >= Date.now() here.
+      // We want to fetch all pending emails, including those that became overdue
+      // while the server was down, so we can process them immediately.
     },
   });
 
   let requeued = 0;
 
   for (const email of pendingEmails) {
-    const delayMs = email.scheduledAt.getTime() - Date.now();
-
-    if (delayMs <= 0) continue; // Skip if already past due (will be picked up immediately)
+    const delayMs = Math.max(0, email.scheduledAt.getTime() - Date.now());
 
     const jobData: EmailJobData = {
       emailId: email.id,

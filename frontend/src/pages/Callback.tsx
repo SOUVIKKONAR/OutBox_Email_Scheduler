@@ -3,18 +3,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-
   useEffect(() => {
-    const token = searchParams.get('token');
-    if (token) {
-      localStorage.setItem('token', token);
-      // Fetch user info will be done by useAuth hook
-      navigate('/dashboard', { replace: true });
-    } else {
-      navigate('/login?error=no_token', { replace: true });
-    }
-  }, [navigate, searchParams]);
+    // The backend set a secure HTTP-only cookie.
+    // We just redirect to the dashboard. The useAuth hook will fetch /api/auth/me automatically.
+    navigate('/dashboard', { replace: true });
+  }, [navigate]);
 
   return (
     <div style={{

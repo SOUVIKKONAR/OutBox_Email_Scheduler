@@ -1,6 +1,8 @@
 import { Router, Response } from 'express';
 import axios from 'axios';
+import crypto from 'crypto';
 import { prisma } from '../config/db';
+import { redis } from '../config/redis';
 import { env } from '../config/env';
 import { authMiddleware } from '../middleware/auth';
 import { AuthRequest } from '../types';
@@ -8,8 +10,9 @@ import { AuthRequest } from '../types';
 const router = Router();
 
 // ── GET /api/slack/connect — Initiate Slack OAuth ────────────────
-router.get('/connect', authMiddleware, (req: AuthRequest, res: Response) => {
-  const state = req.user!.id; // Pass userId as state to retrieve after callback
+router.get('/connect', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const state = crypto.randomBytes(32).toString('hex');
+  await redis.setex(`slack_state:${state}`, 600, req.user!.id); // 10 min TTL
 
   const scopes = 'incoming-webhook,chat:write';
   const url = `https://slack.com/oauth/v2/authorize?` +
@@ -25,12 +28,21 @@ router.get('/connect', authMiddleware, (req: AuthRequest, res: Response) => {
 router.get('/callback', async (req, res: Response) => {
   try {
     const { code, state } = req.query;
-    const userId = state as string;
 
-    if (!code || !userId) {
+    if (!code || !state) {
       res.redirect(`${env.FRONTEND_URL}/dashboard?slack=error&reason=missing_params`);
       return;
     }
+
+    // Validate CSRF state and get userId
+    const userId = await redis.get(`slack_state:${state as string}`);
+    if (!userId) {
+      res.redirect(`${env.FRONTEND_URL}/dashboard?slack=error&reason=invalid_state`);
+      return;
+    }
+
+    // Consume the state so it cannot be reused
+    await redis.del(`slack_state:${state as string}`);
 
     // Exchange code for token
     const tokenResponse = await axios.post('https://slack.com/api/oauth.v2.access', null, {

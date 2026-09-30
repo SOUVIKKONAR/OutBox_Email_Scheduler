@@ -11,19 +11,11 @@ export function useAuth() {
 
   const checkAuth = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
       const { data } = await api.get('/auth/me');
       setUser(data.user);
       localStorage.setItem('user', JSON.stringify(data.user));
     } catch {
       setUser(null);
-      localStorage.removeItem('token');
       localStorage.removeItem('user');
     } finally {
       setLoading(false);
